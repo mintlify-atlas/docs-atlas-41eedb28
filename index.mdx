@@ -1,133 +1,78 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "PS5 Linux Loader: run bare-metal Linux on PS5 Phat"
+description: "PS5 Linux Loader exploits a hypervisor vulnerability to boot full Linux on PS5 Phat, unlocking 8 CPU cores, AMD GPU, 4K60 HDMI, and optional M.2 SSD storage."
 ---
 
-## Setting up
+PS5 Linux Loader is an open-source payload that exploits a patched hypervisor (HV) vulnerability to boot Linux directly on PS5 Phat consoles running firmware 3.xx or 4.xx. Once booted, Linux runs bare-metal with full access to the console's hardware: 8 CPU cores at 3.5 GHz, an AMD GPU at 2.23 GHz, 4K60 HDMI output, all USB ports, and optional M.2 SSD storage.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Hardware requirements" icon="microchip" href="/installation/hardware-requirements">
+    Check which PS5 models and firmware versions are supported, and what peripherals you need
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Build a Linux image" icon="compact-disc" href="/installation/build-linux-image">
+    Build and flash an Ubuntu image to a USB drive ready for PS5 boot
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Run the exploit" icon="terminal" href="/installation/run-exploit">
+    Set up the jailbreak exploit to unlock the PS5 for payload delivery
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Send the payload" icon="rocket" href="/installation/send-payload">
+    Compile or download the loader ELF and send it to your PS5 over the network
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What you get
 
-Everything you need to create world-class documentation.
+After booting Linux on your PS5, you have a fully functional Linux PC with desktop performance:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Full CPU performance" icon="bolt">
+    8 cores / 16 threads at 3.5 GHz — run Steam, emulators, and desktop workloads
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="AMD GPU with amdgpu" icon="display">
+    GPU at 2.23 GHz with open-source amdgpu driver, 4K60 HDMI video and audio
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="USB peripherals" icon="usb">
+    All USB ports supported — keyboard, mouse, Ethernet/WLAN adapters, and more
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="M.2 SSD support" icon="hard-drive">
+    Use a PS5-compatible M.2 SSD as a dedicated Linux partition for fast storage
   </Card>
-</Columns>
+</CardGroup>
 
-## Make your content agent ready
+## How it works
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Build a Linux image">
+    Clone the [ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image) repository and run the build script to produce a bootable Ubuntu image, then flash it to a USB drive.
+  </Step>
+  <Step title="Configure your PS5">
+    Enable **Supply Power to USB Ports** in Rest Mode settings and disable HDMI Device Link so the payload can trigger a controlled rest-mode boot.
+  </Step>
+  <Step title="Run the jailbreak exploit">
+    Use [umtx2](https://github.com/idlesauce/umtx2) with a fake DNS server to serve the exploit through the PS5's built-in browser, giving userland code execution on the PS5.
+  </Step>
+  <Step title="Send the loader payload">
+    Compile `ps5-linux-loader.elf` or download a release binary, then send it to the PS5 over TCP port 9021. The loader defeats the hypervisor, maps Linux files, and puts the PS5 into rest mode to boot Linux on wake.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+<Note>
+  PS5 Linux Loader is only supported on **PS5 Phat** consoles. PS5 Slim is not supported. Only firmware versions 3.xx and 4.xx are currently supported.
+</Note>
 
-## Need inspiration?
+## Firmware support
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Firmware | Supported | M.2 SSD |
+|----------|-----------|---------|
+| 3.00, 3.10, 3.20, 3.21 | Yes | No |
+| 4.00, 4.02, 4.03, 4.50, 4.51 | Yes | Yes |
+| 5.xx and above | No | — |
+
+<CardGroup cols={2}>
+  <Card title="Compatibility details" icon="list-check" href="/compatibility">
+    Full firmware and hardware compatibility matrix
+  </Card>
+  <Card title="Internals overview" icon="code" href="/internals/overview">
+    How the HV exploit and custom bootloader work under the hood
+  </Card>
+</CardGroup>

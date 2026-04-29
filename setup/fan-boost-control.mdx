@@ -1,0 +1,30 @@
+---
+title: "Control fan speed and enable CPU/GPU boost on PS5 Linux"
+description: "Use the ps5_control tool to boost CPU to 3500 MHz and GPU to 2230 MHz, and manage the PS5 fan curve for safe high-performance operation."
+---
+
+By default, PS5 Linux runs the CPU and GPU at conservative clock speeds. The `ps5_control` tool included in `ps5-linux-tools` lets you raise the CPU to 3500 MHz and the GPU to 2230 MHz — matching the full performance the hardware delivers under the official PS5 OS — and adjust the fan curve to keep thermals in check.
+
+## Prerequisites
+
+- You have cloned `ps5-linux-tools` (see [first boot setup](/setup/first-boot)).
+- `gcc` is available on your system (installed by default in the ps5-ubuntu2604 image).
+
+## Build and use ps5_control
+
+Compile the tool and enable fan control and boost:
+
+```bash
+cd ps5-linux-tools
+gcc -o ps5_control ps5_control.c
+sudo ./ps5_control --fan on
+sudo ./ps5_control --boost on
+```
+
+<Warning>
+  Always enable the fan before enabling boost. Running the CPU and GPU at full clock speeds without the fan curve active can cause the PS5 to overheat. This matches the behavior of the official PS5 OS, which always runs the fan when boost is active.
+</Warning>
+
+<Note>
+  If you enable boost without enabling the fan first, heat will build up quickly and the console may throttle or shut down to protect itself.
+</Note>

@@ -1,0 +1,117 @@
+---
+title: "Build the ps5-linux Ubuntu image for your USB drive"
+description: "Clone ps5-linux-image and run build_image.sh to produce a ready-to-flash Ubuntu 26.04 image for PS5. Covers Linux, macOS, and Windows WSL2."
+---
+
+The ps5-linux project provides a build script that produces a ready-to-flash Ubuntu image for the PS5. You run this script on your PC, and the resulting `.img` file is what you will write to your USB drive in the next step.
+
+<Tip>
+  Ubuntu 26.04 is the only supported distro. The `--distro ubuntu2604` flag is required.
+</Tip>
+
+## Prerequisites
+
+- **Linux, macOS, or Windows with WSL2** — the build script runs inside Docker.
+- **Docker** — installed and running before you start.
+- **~10 GB of free disk space** for the build output.
+
+## Build steps
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    <Steps>
+      <Step title="Clone the image repository">
+        ```bash
+        git clone https://github.com/ps5-linux/ps5-linux-image
+        cd ps5-linux-image
+        ```
+      </Step>
+      <Step title="Make the build script executable">
+        ```bash
+        chmod +x ./build_image.sh
+        ```
+      </Step>
+      <Step title="Run the build">
+        ```bash
+        ./build_image.sh --distro ubuntu2604
+        ```
+
+        The build pulls a Docker image and compiles the Ubuntu rootfs. It may take 10–30 minutes depending on your machine and internet speed.
+      </Step>
+      <Step title="Confirm the output">
+        When the script finishes, the image is written to:
+
+        ```
+        output/ps5-ubuntu2604.img
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows (WSL2)">
+    <Steps>
+      <Step title="Install WSL2">
+        Open **PowerShell** or **Command Prompt** as administrator and run:
+
+        ```powershell
+        wsl --install
+        ```
+
+        Restart your computer when prompted.
+      </Step>
+      <Step title="Install and start Docker inside WSL">
+        Open your WSL terminal and run:
+
+        ```bash
+        sudo apt update
+        sudo apt install docker.io -y
+        sudo service docker start
+        sudo usermod -aG docker $USER
+        ```
+      </Step>
+      <Step title="Restart WSL to apply the Docker group">
+        Back in PowerShell or Command Prompt:
+
+        ```powershell
+        wsl --shutdown
+        ```
+
+        Then reopen your WSL terminal.
+      </Step>
+      <Step title="Clone the image repository">
+        ```bash
+        cd ~/
+        git clone https://github.com/ps5-linux/ps5-linux-image
+        cd ps5-linux-image
+        ```
+      </Step>
+      <Step title="Make the build script executable">
+        ```bash
+        chmod +x ./build_image.sh
+        ```
+      </Step>
+      <Step title="Run the build">
+        ```bash
+        ./build_image.sh --distro ubuntu2604
+        ```
+
+        The build pulls a Docker image and compiles the Ubuntu rootfs. It may take 10–30 minutes depending on your machine and internet speed.
+      </Step>
+      <Step title="Confirm the output">
+        When the script finishes, the image is written to:
+
+        ```
+        output/ps5-ubuntu2604.img
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<CardGroup cols={2}>
+  <Card title="Hardware requirements" icon="cpu" href="/installation/hardware-requirements">
+    Review what hardware you need before continuing.
+  </Card>
+  <Card title="Flash Linux image to USB" icon="usb" href="/installation/flash-usb">
+    Write the image to your USB drive.
+  </Card>
+</CardGroup>

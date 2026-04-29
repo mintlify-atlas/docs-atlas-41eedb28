@@ -1,0 +1,115 @@
+---
+title: "PS5 Linux Loader: three-phase execution architecture"
+description: "A walkthrough of the three-phase boot architecture: userland payload, FreeBSD kernel shellcode, and hypervisor shellcode that together boot Linux on PS5."
+---
+
+The PS5 Linux Loader boots Linux through three execution phases across three privilege levels. A userland ELF payload runs inside the PS5's FreeBSD-based GameOS, defeats the AMD SVM hypervisor, injects a shellcode into the kernel's code cave, and then puts the console into rest mode. When the PS5 wakes, the injected kernel shellcode intercepts the ACPI resume path, defeats the hypervisor a second time from ring-0, sets up identity-mapped page tables, and transfers execution to a second shellcode that runs in hypervisor space and performs the final Linux boot.
+
+## The userland payload
+
+The entry point is `main()` in `source/main.c`. It runs four functions in sequence before handing off to the OS rest mode.
+
+### `setup_env()`
+
+Calls `set_offsets()` to detect the running firmware version and load the corresponding `offset_list` struct (one exists for each of the nine supported firmware builds: 3.00, 3.10, 3.20, 3.21, 4.00, 4.02, 4.03, 4.50, 4.51). It then calls `init_global_vars()` to resolve kernel base addresses (`ktext`, `kdata`, `dmap`) used throughout the rest of the payload.
+
+### `hv_defeat()`
+
+Runs the six-stage hypervisor defeat sequence. This is the core exploit: it progressively disables hardware memory range restrictions, patches the Virtual Machine Control Block (VMCB) on all 16 CPU cores using IOMMU DMA writes, forces the hypervisor to reload the patched VMCBs, strips execute-only protection from kernel pages, and flushes the TLB. See [Hypervisor exploit stages in detail](/internals/hv-exploit) for a full breakdown.
+
+### `fetch_linux()`
+
+Reads three files from the USB drive into memory: the compressed Linux kernel image (`bzImage`), the initial RAM disk (`initrd`), and a configuration file. The addresses and sizes are stored in a `linux_info` struct that is later passed down to both shellcodes.
+
+### `prepare_resume()`
+
+This function installs the kernel shellcode and wires it into the ACPI wakeup path:
+
+1. Copies `shellcode_kernel_text[]` (the embedded kernel shellcode binary) into the kernel code cave at `ktext + KERNEL_CODE_CAVE`, in 0x1000-byte chunks.
+2. Builds a `shellcode_kernel_args` struct containing firmware version, kernel base addresses, function pointers, IOMMU virtual addresses, VMCB physical addresses, and a pointer to `linux_info`. Writes the struct to the data cave at `ktext + KERNEL_DATA_CAVE`.
+3. Locates the sentinel value `0x11AA11AA11AA11AA` in the shellcode binary and overwrites it with the actual virtual address of the args struct, so the shellcode can find its arguments at runtime.
+4. Patches a 5-byte near `CALL` instruction at `HOOK_ACPI_WAKEUP_MACHDEP` (`AcpiSetFirmwareWakingVector` inside `acpi_wakeup_machdep`) to redirect into the kernel shellcode.
+5. Patches `KERNEL_DEBUG_PATCH` and `KERNEL_CFI_CHECK` to `0xC3` (RET) to neutralize debug exception and CFI check paths that would abort the shellcode.
+
+### `enter_rest_mode()`
+
+Puts the console into rest mode. When power is restored, the FreeBSD kernel begins its normal ACPI wake path, hits the patched call site, and transfers control to the injected shellcode.
+
+## The two shellcodes
+
+The loader embeds two separately compiled shellcode binaries, each handling one phase of the privileged boot sequence.
+
+### Kernel shellcode (`shellcode_kernel/`)
+
+Runs in FreeBSD kernel space (ring-0). It is entered via the patched ACPI wakeup hook and performs three jobs: re-patches all 16 VMCBs via IOMMU (defeating the hypervisor from ring-0), sets up 1:1 identity-mapped page tables for the hypervisor shellcode, and copies the hypervisor shellcode binary to the HV code cave in physical memory. It then calls `smp_rendezvous` to issue a `vmmcall` on every core simultaneously, which causes the hypervisor to exit and jump to the patched VMEXIT handler — which now points to the HV shellcode.
+
+See [Kernel shellcode: ACPI wakeup hook](/internals/kernel-shellcode) for the full argument structure and installation detail.
+
+### Hypervisor shellcode (`shellcode_hypervisor/`)
+
+Runs in hypervisor space after the VMEXIT handler is redirected. It clears SVM, disables IOMMU and TMR restrictions that would interfere with bare-metal Linux, builds the e820 memory map, populates the Linux boot protocol params struct, copies `bzImage` and `initrd` to their final physical addresses, and jumps to the kernel entry point at `kernel_pa + 0x200`.
+
+See [Hypervisor shellcode: Linux boot sequence](/internals/hypervisor-shellcode) for the boot protocol details.
+
+## Full boot flow
+
+<Steps>
+  <Step title="Payload delivery">
+    The `ps5-linux-loader.elf` payload is sent to the PS5 over TCP port 9021 via a browser-based jailbreak exploit. The payload runs as a userland process under FreeBSD GameOS.
+  </Step>
+  <Step title="Environment setup">
+    `setup_env()` detects the firmware version, loads the per-firmware `offset_list`, and resolves `ktext`, `kdata`, and `dmap` base addresses.
+  </Step>
+  <Step title="Hypervisor defeat (userland)">
+    `hv_defeat()` runs six stages: TMR relax → VMCB discovery → VMCB patch via IOMMU → force VMCB reload → xotext removal → pmap TLB flush. After this the kernel's text segment is writable from userland.
+  </Step>
+  <Step title="Linux files loaded">
+    `fetch_linux()` reads `bzImage`, `initrd`, and `cmdline.txt` from the USB drive into memory.
+  </Step>
+  <Step title="Shellcode installation">
+    `prepare_resume()` copies the kernel shellcode into the kernel code cave, writes the args struct to the data cave, patches the ACPI wakeup hook, and neutralizes CFI and debug-exception checks.
+  </Step>
+  <Step title="Rest mode">
+    The console enters rest mode. The FreeBSD kernel suspends normally and waits for a power button press.
+  </Step>
+  <Step title="ACPI wake → kernel shellcode">
+    On wake, the FreeBSD kernel runs `acpi_wakeup_machdep`. The patched call site redirects into the kernel shellcode. The shellcode re-defeats the hypervisor from ring-0, installs the HV shellcode, and sets up identity-mapped page tables.
+  </Step>
+  <Step title="vmmcall → hypervisor shellcode">
+    `smp_rendezvous` issues `vmmcall` on all 16 cores. The VMEXIT handler has been patched to jump to the HV shellcode. All cores enter the HV shellcode.
+  </Step>
+  <Step title="Linux boot">
+    The HV shellcode (running on core 0) clears SVM, configures VRAM, builds boot params, and calls `startup_64` to hand off to the Linux kernel.
+  </Step>
+</Steps>
+
+## Data flow between components
+
+```
+USB drive
+  └─ bzImage, initrd, cmdline.txt
+       │
+       ▼
+userland payload (main.c)
+  ├─ linux_info struct  ──────────────────────────────────────────────┐
+  ├─ shellcode_kernel_args struct  ─────────────────────────────────┐ │
+  └─ shellcode_kernel binary  ──► kernel code cave (ktext+offset)   │ │
+                                                                     │ │
+       ▼  (ACPI wake)                                                │ │
+kernel shellcode (ring-0)                                           │ │
+  ├─ reads shellcode_kernel_args ◄──────────────────────────────────┘ │
+  ├─ patches VMCBs via IOMMU                                           │
+  ├─ copies shellcode_hypervisor to HV code cave (physical)            │
+  ├─ copies linux_info, bzImage, initrd to cave_linux_files ◄─────────┘
+  └─ smp_rendezvous(vmmcall) ──► VMEXIT ──► HV shellcode              │
+                                                                        │
+       ▼  (hypervisor space)                                            │
+hypervisor shellcode                                                    │
+  ├─ reads linux_info from cave_linux_info ◄─────────────────────────┘
+  ├─ configures VRAM, e820 table, boot params
+  └─ startup_64(kernel_pa, bp) ──► Linux kernel
+```
+
+<Info>
+The `cave` region starting at physical address `0x100000000` (4 GB) is used as a staging area shared between all three execution phases. `cave_hv_paging` holds the identity-mapped page tables, `cave_hv_code` holds the HV shellcode binary, and `cave_linux_files` holds the `linux_info` struct, `bzImage`, and `initrd`.
+</Info>

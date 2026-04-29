@@ -1,0 +1,67 @@
+---
+title: "First boot setup after PS5 Linux successfully starts"
+description: "Configure your PS5 Linux system on first boot: set your password, fix internet, install Firefox, and clone the ps5-linux-tools repository."
+---
+
+After Linux boots successfully on your PS5 for the first time, there are several one-time configuration steps to complete before the system is fully usable. Work through them in order below.
+
+<Steps>
+  <Step title="Configure your system and set a login password">
+    Complete the initial system setup wizard and choose a login password. Make sure you memorize it — you will need it for every `sudo` command going forward.
+  </Step>
+
+  <Step title="Disable the screen saver">
+    Open the system settings and disable the screen saver. It is currently buggy on PS5 Linux and will cause display issues if left enabled.
+  </Step>
+
+  <Step title="Fix internet connectivity if needed">
+    If you have no internet access, open the network settings and disable, then re-enable your Wired or WLAN connection. This forces the adapter to re-negotiate and typically resolves the issue.
+  </Step>
+
+  <Step title="Install Firefox">
+    Open a terminal and run:
+
+    ```bash
+    sudo snap install firefox
+    sudo snap refresh mesa-2404 --channel=latest/edge
+    ```
+
+    The second command updates the Mesa graphics stack to the latest edge build, which improves GPU compatibility on the PS5 hardware.
+  </Step>
+
+  <Step title="Clone ps5-linux-tools">
+    The `ps5-linux-tools` repository contains utilities for M.2 SSD setup, fan control, and boost control that are referenced throughout this guide:
+
+    ```bash
+    git clone https://github.com/ps5-linux/ps5-linux-tools
+    ```
+  </Step>
+</Steps>
+
+## Tips
+
+<Tip>
+  You can adjust the kernel command line by editing `cmdline.txt` on the FAT32 partition of your USB drive. Changes take effect on the next boot.
+</Tip>
+
+<Tip>
+  The VRAM allocation can be changed in `vram.txt` on the FAT32 partition. The default is 512 MB (`0x20000000`), which enables dynamic VRAM allocation. Increase this value if you need more dedicated GPU memory.
+</Tip>
+
+<Tip>
+  Monitor hotswap may work, but the resolution will not change automatically when you swap displays. You will need to reboot to pick up a new resolution.
+</Tip>
+
+<Tip>
+  Many additional configuration options and tricks from the [AMD BC250 Documentation](https://elektricm.github.io/amd-bc250-docs/) apply directly to PS5 Linux.
+</Tip>
+
+## Known issues
+
+<Warning>
+  The following issues are known and currently unresolved:
+
+  - **Screen saver** does not work properly — disable it as described above.
+  - **HDMI audio output** does not work on some monitors.
+  - **HDMI 1440p and 2160p** video output does not work on some monitors. If you get a black screen at those resolutions, add `amdgpu.force_1080p=1` to `cmdline.txt` in the FAT32 partition of your USB drive.
+</Warning>

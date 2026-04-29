@@ -1,0 +1,55 @@
+---
+title: "PS5 Linux Loader: run full Linux on PS5 Phat consoles"
+description: "PS5 Linux Loader exploits a hypervisor vulnerability to boot full Linux on PS5 Phat, giving you 8 CPU cores, an AMD GPU, 4K60 HDMI, and M.2 SSD support."
+---
+
+PS5 Linux Loader is an open-source payload that exploits a patched hypervisor (HV) vulnerability to boot Linux bare-metal on PS5 Phat consoles. Once running, Linux has full access to the console's hardware — you can play Steam games, run emulators, browse the web, and use the PS5 as a capable desktop PC.
+
+<Note>
+  PS5 Linux Loader only supports **PS5 Phat** consoles on **firmware 3.xx or 4.xx**. PS5 Slim is not supported. Firmware 5.xx and above are not currently supported.
+</Note>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Full CPU performance" icon="bolt">
+    8 cores / 16 threads running at 3.5 GHz — enough to run Steam games, emulators, and desktop workloads with strong performance.
+  </Card>
+  <Card title="AMD GPU with amdgpu" icon="display">
+    GPU clocked at 2.23 GHz, driven by the open-source amdgpu driver. Supports 4K60 HDMI video and audio output.
+  </Card>
+  <Card title="USB peripheral support" icon="usb">
+    All USB ports on the console are accessible — connect keyboards, mice, Ethernet or WLAN adapters, and other USB devices.
+  </Card>
+  <Card title="M.2 SSD storage" icon="hard-drive">
+    Firmware 4.xx consoles can use a PS5-compatible M.2 SSD as a dedicated Linux partition for faster storage.
+  </Card>
+</CardGroup>
+
+## Hardware overview
+
+The PS5 Phat hardware exposed to Linux after the HV exploit:
+
+| Component | Specification |
+|-----------|---------------|
+| CPU | 8 cores / 16 threads at 3.5 GHz |
+| GPU | AMD at 2.23 GHz (amdgpu driver) |
+| Video output | HDMI — 1080p, 1440p, 2160p at 60 Hz |
+| Storage | USB drive (required); M.2 SSD (optional, 4.xx only) |
+
+## Architecture overview
+
+PS5 Linux Loader works by exploiting a patched vulnerability in the PS5's hypervisor. The payload runs from userland after the jailbreak exploit gains code execution, then defeats the HV across all 16 CPU cores by patching Virtual Machine Control Blocks (VMCBs) via the IOMMU. With the hypervisor neutralized, the loader maps the Linux kernel and bootloader into memory and triggers a rest-mode cycle — when the PS5 wakes, it boots Linux instead of PS5 OS.
+
+The approach gives Linux bare-metal access to hardware: no virtual machine, no sandboxing. This is why performance is close to native and why features like direct GPU access with amdgpu are possible.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Firmware and hardware compatibility" icon="list-check" href="/compatibility">
+    Check which firmware versions are supported and what hardware you need before starting.
+  </Card>
+  <Card title="Hardware requirements" icon="microchip" href="/installation/hardware-requirements">
+    See the full list of required and optional peripherals for running Linux on your PS5.
+  </Card>
+</CardGroup>

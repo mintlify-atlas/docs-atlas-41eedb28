@@ -1,0 +1,90 @@
+---
+title: "Troubleshoot PS5 Linux: boot, display, and network"
+description: "Diagnose and fix boot failures, black screen after white LED, missing internet, HDMI audio bugs, and socat payload delivery errors on PS5 Linux."
+---
+
+This page covers the most common issues encountered when booting Linux on your PS5, including display problems, network failures, payload errors, and storage quirks. Work through the relevant accordion below before reporting to Discord.
+
+<AccordionGroup>
+  <Accordion title="PS5 booted back into PS5 OS instead of Linux">
+    The most common cause is pressing the power button too early after the payload was sent.
+
+    After the payload runs, the PS5 goes into rest mode. The orange LED will blink while it transitions. **You must wait until the orange LED stops blinking and becomes static** before pressing the power button again.
+
+    **Fix:**
+    1. Re-run the exploit and send the payload again.
+    2. Watch the orange LED — wait until it is solid (not blinking).
+    3. Only then press the power button to boot into Linux.
+
+    <Warning>
+      Pressing the power button while the orange LED is still blinking will cause the PS5 to boot back into PS5 OS.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="White LED but black screen">
+    A white LED means Linux booted successfully — the issue is with display output, not the boot itself.
+
+    Try the following steps in order:
+
+    1. **Try a different monitor.** Some monitors have compatibility issues with the current amdgpu driver. A different panel or brand may work immediately.
+    2. **Try a different resolution.** Edit `cmdline.txt` in the FAT32 partition of your USB drive and add the following kernel parameter:
+       ```text
+       amdgpu.force_1080p=1
+       ```
+    3. **Try a capture card.** Use a capture card set to a different resolution as an intermediary between the PS5 and your display.
+
+    <Note>
+      Monitor hotswap may work, but resolution will not change automatically when swapping displays.
+    </Note>
+
+    If none of the above resolves the black screen, report the issue in the [Discord server](https://discord.gg/PeMGVB7BAm) and include your EDID information so the team can investigate monitor compatibility.
+  </Accordion>
+
+  <Accordion title="No internet connection after first boot">
+    On some systems the network interface does not come up automatically on the first boot.
+
+    **Fix:** Open your network settings and disable, then re-enable your **Wired** or **WLAN** connection. The connection should establish immediately after re-enabling.
+  </Accordion>
+
+  <Accordion title="HDMI audio doesn't work">
+    This is a known bug. HDMI audio output does not work on some monitors.
+
+    There is no workaround at this time. If you are affected, consider using a USB audio adapter as an alternative output device.
+  </Accordion>
+
+  <Accordion title="1440p or 2160p display not working">
+    HDMI 1440p and 2160p (4K) video output is a known issue on some monitors.
+
+    **Workaround:** Force 1080p output by editing `cmdline.txt` in the FAT32 partition of your USB drive and adding:
+
+    ```text
+    amdgpu.force_1080p=1
+    ```
+
+    Reboot after saving the file. Your display should now receive a 1080p signal.
+  </Accordion>
+
+  <Accordion title="PS5 asks to format M.2 again after reboot">
+    If your PS5 prompts you to format the M.2 SSD again after a reboot, this is an unexpected issue that needs investigation.
+
+    Please report it in the [Discord server](https://discord.gg/PeMGVB7BAm) and include:
+    - Your M.2 SSD model name
+    - The storage capacity of the drive
+
+    Do not format the drive again without guidance, as this will erase your Linux installation on the M.2.
+  </Accordion>
+
+  <Accordion title="Payload send fails or socat errors">
+    If `socat` exits with an error or the payload never arrives, work through the following checks:
+
+    1. **Verify the PS5 IP address.** On your PS5, go to **Settings → Network → View Connection Status** and confirm the IP address matches what you are using in the `socat` command.
+    2. **Confirm the exploit ran successfully.** You must have accepted the untrusted certificate prompt in the user manual page. If you skipped or dismissed it, re-run the exploit from the beginning.
+    3. **Check TCP port 9021.** Make sure nothing on your network (firewall, router, or host firewall) is blocking outbound connections to TCP port 9021 on the PS5's IP address.
+
+    <Tip>
+      Run `nc -zv <PS5_IP> 9021` from your PC to quickly test whether the port is reachable before sending the payload.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+If your issue is not listed here, join the [Discord server](https://discord.gg/PeMGVB7BAm) for community support and to report new issues.

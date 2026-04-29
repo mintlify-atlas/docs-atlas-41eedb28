@@ -1,0 +1,89 @@
+---
+title: "Build ps5-linux-loader from source using the PS5 SDK"
+description: "How to compile ps5-linux-loader with ps5-payload-sdk: prerequisites, build steps, shellcode subproject details, and how to send the output ELF to your PS5."
+---
+
+Building ps5-linux-loader requires the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) and produces a PS5-compatible ELF payload (`bin/ps5-linux-loader.elf`) that you send to the console over a network socket. If you would rather skip the build, a prebuilt release binary is available on the [GitHub releases page](https://github.com/ps5-linux/ps5-linux-loader/releases/).
+
+## Prerequisites
+
+- **[ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk)** — installed at `/opt/ps5-payload-sdk/` by default, or set the `PS5_PAYLOAD_SDK` environment variable to the install path.
+- **Standard build tools** — `make`, `gcc`, `ld`, `objcopy`, and `python3` must be on your `PATH`. The SDK ships its own `clang`/`gcc` wrapper for the Prospero target; the top-level build uses that wrapper automatically.
+
+## Build steps
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/ps5-linux/ps5-linux-loader
+    cd ps5-linux-loader
+    ```
+  </Step>
+
+  <Step title="Build">
+    ```bash
+    make
+    ```
+
+    This runs three build stages in order:
+
+    1. **`shellcode_hypervisor`** — compiled as position-independent bare-metal code with `-ffreestanding -nostdlib -fcf-protection=none`. The linker script `shellcode_hypervisor/linker.ld` places everything in a `.shell_code` section starting at `0x1000`. After linking, `objcopy` extracts the `.shell_code` section to a raw binary, and `bin_to_c_hypervisor.py` converts it to a C byte-array header (`shellcode_hypervisor/shellcode_hypervisor.h`).
+
+    2. **`shellcode_kernel`** — compiled with the same bare-metal flags. The linker script `shellcode_kernel/linker.ld` places the entry point and all code/data into a single `.text` section starting at `0x1000`. The `.text` section is extracted as a raw binary and converted to a C header (`shellcode_kernel/shellcode_kernel.h`) via `bin_to_c_kernel.py`.
+
+    3. **Main payload** — all `source/*.c` files are compiled with:
+       ```
+       -std=c23 -Wall -Iinclude -Ishellcode_hypervisor -Ishellcode_kernel
+       ```
+       The shellcode headers are `#include`d directly so the payloads are embedded in the final binary. The result is linked to `bin/ps5-linux-loader.elf`.
+  </Step>
+</Steps>
+
+## Output
+
+The build produces a single file:
+
+```
+bin/ps5-linux-loader.elf
+```
+
+Send it to the PS5 after running the exploit:
+
+```bash
+socat -t 99999999 - TCP:<PS5_IP>:9021 < bin/ps5-linux-loader.elf
+```
+
+Replace `<PS5_IP>` with the IP address shown in **Settings → Network → View Connection Status** on the PS5.
+
+## Cleaning
+
+```bash
+make clean
+```
+
+This removes the compiled objects, the ELF binary, the raw shellcode binaries, and the generated C headers. The next `make` invocation will rebuild everything from scratch.
+
+## Custom SDK path
+
+If the SDK is not installed at `/opt/ps5-payload-sdk/`, pass the path explicitly:
+
+```bash
+PS5_PAYLOAD_SDK=/path/to/sdk make
+```
+
+You can also export it in your shell profile to avoid repeating it:
+
+```bash
+export PS5_PAYLOAD_SDK=/path/to/sdk
+make
+```
+
+## Shellcode subprojects
+
+Each shellcode subproject (`shellcode_hypervisor/` and `shellcode_kernel/`) is a self-contained bare-metal build with its own `Makefile` and `linker.ld`. They are compiled independently of the ps5-payload-sdk's Prospero toolchain — they use the host `gcc` and `ld` directly.
+
+The conversion scripts (`bin_to_c_hypervisor.py`, `bin_to_c_kernel.py`) read the raw binary output of `objcopy` and emit a C header containing the shellcode as a `static const uint8_t[]` array. This array is included directly into the main payload source so the shellcode is baked into the ELF at link time with no separate loading step required.
+
+<Tip>
+  If you only want to test a change to the main loader logic and neither shellcode has changed, the generated `.h` files will still be present from the previous build and `make` will skip rebuilding the subprojects.
+</Tip>

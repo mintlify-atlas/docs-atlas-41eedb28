@@ -1,0 +1,63 @@
+---
+title: "PS5 Linux Loader FAQ: features, limits, and hardware"
+description: "Answers to common questions about PS5 Linux: dual-boot, internal SSD safety, DualSense support, supported resolutions, firmware limits, and more."
+---
+
+This page answers the most frequently asked questions about running Linux on a PS5, covering what is supported, what is not, and what may be added in the future.
+
+<AccordionGroup>
+  <Accordion title="Can I dual-boot Linux and PS5 OS?">
+    No. This is a soft-mod — nothing is permanently installed to the PS5. You need to re-run the exploit and send the payload each time you want to boot into Linux. When you boot normally without the exploit, your PS5 works exactly as before.
+  </Accordion>
+
+  <Accordion title="Does the internal SSD get modified?">
+    No. The internal SSD is not modified at any point. Linux runs from an external USB drive (or an M.2 SSD used exclusively for Linux). You can continue using your PS5 normally for games and PS5 OS at any time.
+  </Accordion>
+
+  <Accordion title="Can I put Linux into standby and resume?">
+    No. Standby and resume are not currently supported. A shutdown feature that puts the PS5 into rest mode — allowing you to relaunch Linux when powering on again — may be added in the future.
+  </Accordion>
+
+  <Accordion title="Can I use the PS5's built-in NIC or WLAN module?">
+    In theory yes, but a driver needs to be written or adapted before the built-in NIC or WLAN module can be used. Neither is currently supported.
+
+    In the meantime, use a **USB Ethernet adapter** or **USB WLAN adapter** for internet access. Both are required hardware for the setup.
+  </Accordion>
+
+  <Accordion title="Does the DualSense controller work?">
+    Yes, via a **Bluetooth dongle**. Plug a USB Bluetooth dongle into your PS5 and pair the DualSense from Linux. Built-in Bluetooth is not yet supported.
+  </Accordion>
+
+  <Accordion title="What resolutions and refresh rates are supported?">
+    The following are currently supported:
+
+    - **1080p** at 60 Hz
+    - **1440p** at 60 Hz
+    - **2160p (4K)** at 60 Hz
+
+    120 Hz and 30 Hz support may be added in the future. Note that 1440p and 2160p output has known compatibility issues on some monitors — see the [Troubleshooting](/troubleshooting) page for workarounds.
+  </Accordion>
+
+  <Accordion title="Will firmware 5.xx or higher be supported?">
+    No. Support for 5.xx and higher firmwares is not planned in the same way as 3.xx/4.xx. On those firmwares Linux would run within the GameOS VM with reduced features and potentially lower performance, and this is not a current goal for the project.
+  </Accordion>
+
+  <Accordion title="Can I use a PS5 Slim?">
+    No. Only the **PS5 Phat** (original model) is supported. The PS5 Slim is not supported.
+  </Accordion>
+
+  <Accordion title="Will 1.xx or 2.xx firmware be supported?">
+    Possibly in the future, but it is not a priority. The team is focused on 3.xx and 4.xx firmware support.
+  </Accordion>
+
+  <Accordion title="Can I run Steam games and emulators?">
+    Yes. The PS5's hardware is well-suited for this workload:
+
+    - **CPU:** 8 cores (16 threads) at 3.5 GHz
+    - **GPU:** AMD GPU at 2.23 GHz with full `amdgpu` driver support
+
+    Steam and various emulators run with impressive performance. Use the fan and boost control tool from [ps5-linux-tools](https://github.com/ps5-linux/ps5-linux-tools) to unlock the full CPU and GPU clock speeds.
+  </Accordion>
+</AccordionGroup>
+
+Have a question that isn't answered here? Join the [Discord server](https://discord.gg/PeMGVB7BAm) to ask the community and get help from the developers.

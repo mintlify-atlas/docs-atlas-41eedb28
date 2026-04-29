@@ -1,0 +1,113 @@
+---
+title: "Boot configuration: cmdline, VRAM, and memory layout"
+description: "Files read from the USB FAT32 partition at boot: kernel cmdline, VRAM size, required images, and the fixed physical memory layout defined in config.h."
+---
+
+ps5-linux-loader reads configuration from the FAT32 partition of the USB drive at boot time. This means you can change the kernel command line, adjust VRAM allocation, or swap the kernel image without recompiling anything — just edit or replace the relevant files on the drive and reboot.
+
+## File search paths
+
+The loader scans the following paths in order and uses the first one where it finds the required files. This covers the default PS5 USB mount points as well as a dedicated `PS5/Linux/` subdirectory for users who prefer to organize their drive.
+
+```
+/mnt/usb0/
+/mnt/usb1/
+/mnt/usb2/
+/mnt/usb3/
+/mnt/usb0/PS5/Linux/
+/mnt/usb1/PS5/Linux/
+/mnt/usb2/PS5/Linux/
+/mnt/usb3/PS5/Linux/
+```
+
+## Required files
+
+These two files must be present in one of the search paths above or the loader will fail to boot.
+
+| File | Description |
+|------|-------------|
+| `bzImage` | Compiled Linux kernel image. Use the image built from the ps5-linux-patches tree. |
+| `initrd.img` | Initial ramdisk image. Must match the kernel and contain the drivers needed to mount the root filesystem. |
+
+## Optional configuration files
+
+### `cmdline.txt`
+
+Contains the kernel command line passed to Linux at boot. If this file is absent, the loader uses the default command line compiled into `include/config.h`:
+
+```c
+#define CMD_LINE \
+  "root=/dev/sda2 rw rootwait console=ttyTitania0 console=tty0 " \
+  "video=DP-1:1920x1080@60 mitigations=off idle=halt pci=pcie_bus_perf"
+```
+
+Key parameters in the default line:
+
+| Parameter | Purpose |
+|-----------|---------|
+| `root=/dev/sda2` | Boot root partition. `sda` is the USB drive; adjust if you are booting from M.2 (`sdb2`). |
+| `console=ttyTitania0` | PS5-specific UART console device. Required for serial debug output. |
+| `console=tty0` | Standard VGA/framebuffer console output to the display. |
+| `video=DP-1:1920x1080@60` | Forces the display mode on the DisplayPort output. Adjust if your monitor needs a different resolution. |
+| `mitigations=off` | Disables CPU vulnerability mitigations (Spectre, Meltdown, etc.) for better performance. |
+| `idle=halt` | Uses the `HLT` instruction for CPU idle instead of deeper C-states, which are not fully supported on this hardware. |
+| `pci=pcie_bus_perf` | Sets PCIe bus performance mode for better throughput. |
+
+<Tip>
+  If you have a black screen after boot, try adding `amdgpu.force_1080p=1` to `cmdline.txt`. Some monitors do not negotiate the default resolution correctly.
+</Tip>
+
+### `vram.txt`
+
+Contains the VRAM size as a hexadecimal value. If absent, the loader uses the default of `0x20000000` (512 MB) from `include/config.h`:
+
+```c
+#define VRAM_SIZE (512ULL * 1024 * 1024)
+```
+
+Setting a value in `vram.txt` enables dynamic VRAM allocation, which allows the GPU driver to adjust VRAM usage at runtime. To allocate 1 GB instead:
+
+```
+0x40000000
+```
+
+<Note>
+  Increasing VRAM reduces the memory available to Linux. Stay within the limits of what the PS5's unified memory can support for the workloads you plan to run.
+</Note>
+
+## Physical memory layout
+
+The loader carves out a region of physical memory starting at 4 GB (defined as `cave` in `include/config.h`) for HV shellcode, page tables, and the Linux boot files. The layout is fixed and must not overlap with system-reserved regions.
+
+| Region | Address | Size / notes |
+|--------|---------|--------------|
+| `cave` (base) | `0x100000000` | 4 GB physical — start of the loader's scratch area |
+| `cave_hv_paging` | `cave` | 3 pages (`0x3000`) reserved for 1 GB 1:1 HV mapping (only 2 pages used) |
+| `cave_hv_code` | `cave_hv_paging + 0x3000` | 2 pages (`0x2000`) for the HV shellcode |
+| `cave_linux_files` | `cave_hv_code + 0x2000` | Start of the Linux boot file area |
+| `cave_bzImage` | `cave_linux_files + PAGE_SIZE` | bzImage loaded here; `PAGE_SIZE` = `0x4000` (16 KB) |
+| `initrd` | after `cave_bzImage` | Allocated dynamically after the bzImage |
+| `hv_base_rsp` | `cave + 0x10000000` | HV stack base (256 MB above `cave`) |
+
+The HV stack size is `0x1000` bytes (4 KB).
+
+```c
+#define PAGE_SIZE      0x4000ULL
+#define cave           0x100000000ULL
+#define cave_hv_paging cave
+#define cave_hv_code   cave_hv_paging + 0x3000ULL
+#define cave_linux_files cave_hv_code + 0x2000ULL
+#define cave_bzImage   cave_linux_files + PAGE_SIZE
+#define hv_base_rsp    (cave + 0x10000000ULL)
+#define hv_stack_size  0x1000ULL
+```
+
+## Debug mode
+
+Verbose logging is controlled by the `DEBUG` flag in `include/config.h`. It is off by default:
+
+```c
+#define DEBUG 0  // Toggle to 1 to enable logs
+```
+
+Set it to `1` and recompile to enable debug output from the loader over the UART console. With `DEBUG` enabled, the loader will print progress messages via `FUN_PRINTF` at each stage of the HV defeat, IOMMU setup, and Linux handoff sequence.

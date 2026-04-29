@@ -1,0 +1,90 @@
+{
+  "projectType": "general",
+  "projectName": "PS5 Linux Loader",
+  "projectDescription": "A PS5 payload that exploits a hypervisor vulnerability to boot Linux on PS5 Phat consoles running firmware 3.xx or 4.xx, unlocking full hardware capabilities including an 8-core CPU, AMD GPU, 4K HDMI output, and M.2 SSD support.",
+  "theme": "aspen",
+  "primaryColor": "#003087",
+  "lightColor": "#0070CC",
+  "darkColor": "#00214F",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guide",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["introduction", "compatibility"]
+          },
+          {
+            "group": "Installation",
+            "pages": [
+              "installation/hardware-requirements",
+              "installation/build-linux-image",
+              "installation/flash-usb",
+              "installation/run-exploit",
+              "installation/send-payload"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "setup/first-boot",
+              "setup/m2-ssd",
+              "setup/fan-boost-control"
+            ]
+          },
+          {
+            "group": "Troubleshooting & FAQ",
+            "pages": ["troubleshooting", "faq"]
+          }
+        ]
+      },
+      {
+        "tab": "Internals",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "internals/overview",
+              "internals/hv-exploit",
+              "internals/kernel-shellcode",
+              "internals/hypervisor-shellcode"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "internals/firmware-offsets",
+              "internals/configuration",
+              "internals/building"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Hypervisor (HV) exploit to escape PS5 GameOS VM and gain bare-metal Linux access",
+    "Support for PS5 Phat on firmware 3.xx and 4.xx",
+    "Full AMD GPU support with amdgpu driver (2.23 GHz, 4K60 HDMI)",
+    "8-core / 16-thread CPU at 3.5 GHz with boost control",
+    "M.2 SSD support as dedicated Linux storage partition",
+    "Configurable kernel cmdline and VRAM size via USB FAT32 partition files",
+    "IOMMU-based physical memory writes used to patch VMCBs",
+    "Kernel shellcode injection hooking ACPI wakeup path for seamless Linux boot on resume"
+  ],
+  "publicApiSurface": [
+    "hv_defeat() — orchestrates all hypervisor defeat stages",
+    "fetch_linux(struct linux_info *info) — loads bzImage, initrd, cmdline, and vram config from USB",
+    "stage1_tmr_relax() — relaxes TMR (timer) restrictions in the HV",
+    "stage2_find_vmcbs() — discovers VMCB physical addresses per CPU core",
+    "stage3_patch_vmcbs() — patches VMCBs via IOMMU to disable HV enforcement",
+    "stage4_force_vmcb_reload() — triggers VMCB reload via vmmcall on each core",
+    "stage5_remove_xotext() — removes execute-only page protection from kernel text",
+    "stage6_kernel_pmap_invalidate_all() — invalidates kernel page mappings via pipe trick",
+    "stage7_install_kexec() — installs kexec shellcode into kernel code cave",
+    "iommu_write8_pa(uint64_t pa, uint64_t val) — writes 8 bytes to a physical address via IOMMU",
+    "gpu_init() — initializes GPU context for physical memory read/write",
+    "offset_list struct — per-firmware kernel/HV symbol offsets for 3.00–4.51"
+  ]
+}

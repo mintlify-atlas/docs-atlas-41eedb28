@@ -1,0 +1,202 @@
+---
+title: "Hypervisor shellcode: boot Linux bare-metal on PS5"
+description: "How the hypervisor-space shellcode clears AMD SVM, configures VRAM and the e820 map, and jumps to the Linux kernel entry point on the PS5."
+---
+
+The hypervisor shellcode is the final execution stage of the PS5 Linux Loader. After the kernel shellcode patches the AMD SVM VMEXIT handler to point at a physical memory cave, issuing `vmmcall` on all 16 cores causes the hypervisor to exit into this shellcode. From that point there is no hypervisor, no FreeBSD kernel, and no PS5 OS — just the shellcode running at physical addresses in what was previously hypervisor space, setting up the environment for the Linux kernel.
+
+## Architecture and build
+
+The hypervisor shellcode lives in `shellcode_hypervisor/` and is compiled as a position-independent, freestanding binary with a custom linker script (`linker.ld`). The entry function is marked `__attribute__((section(".entry_point"), naked))`. The resulting binary is converted to a C header (`shellcode_hypervisor.h`) via `bin_to_c_hypervisor.py` and statically embedded in the kernel shellcode binary, which copies it into the HV code cave at `cave_hv_code` (`0x100002000`) before triggering the VMEXIT.
+
+## Entry and per-core stack setup
+
+All 16 cores enter `main()` simultaneously after the VMEXIT. Because the shellcode runs in bare-metal context (no OS stack), it immediately sets up a private stack for each core using the CPU APIC ID:
+
+```c
+__attribute__((section(".entry_point"), naked)) uint32_t main(void) {
+  uint32_t ebax, ebx, ecx, edx;
+  uint32_t cpu_id;
+
+  __asm__ volatile("cpuid"
+                   : "=a"(ebax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                   : "a"(1));
+
+  cpu_id = (ebx >> 24) & 0xFF;
+
+  uintptr_t new_rsp =
+      (uintptr_t)hv_base_rsp + ((uint64_t)(cpu_id) * hv_stack_size);
+
+  __asm__ volatile("movq %0, %%rsp \n\t"
+                   "movq %%rsp, %%rbp \n\t"
+                   :
+                   : "r"(new_rsp)
+                   : "rbp", "memory");
+
+  entry();
+}
+```
+
+Each core gets a 0x1000-byte stack slot starting at `hv_base_rsp` (`cave + 0x10000000`). After setting the stack pointer, all cores call `entry()`.
+
+## The `entry()` function
+
+`entry()` in `shellcode_hypervisor/boot_linux.c` performs all hardware teardown and coordination before booting Linux:
+
+<Steps>
+  <Step title="Disable interrupts and clear SVM">
+    Disables local interrupts, issues `stgi` to clear the global interrupt flag, and clears the SVM enable bit in `EFER` (MSR `0xC0000080`) so the CPU can no longer enter guest mode:
+
+    ```c
+    disable_intr();
+    __asm__ volatile("stgi\n");
+    wrmsr(MSR_EFER, rdmsr(MSR_EFER) & ~EFER_SVM);
+    ```
+  </Step>
+  <Step title="Disable INIT redirection">
+    Clears `VM_CR_R_INIT` in `MSR_VM_CR` (`0xC0010114`) so INIT signals are no longer intercepted:
+
+    ```c
+    wrmsr(MSR_VM_CR, rdmsr(MSR_VM_CR) & ~VM_CR_R_INIT);
+    ```
+  </Step>
+  <Step title="Clean up MTRRs">
+    Zeros three MTRR MSRs that were left configured by the PS5 hypervisor:
+
+    ```c
+    wrmsr(MSR_MTRR4kBase + 0, 0);
+    wrmsr(MSR_MTRR4kBase + 1, 0);
+    wrmsr(MSR_MTRRVarBase + 7 * 2 + 1, 0);
+    ```
+  </Step>
+  <Step title="Synchronize all 16 cores">
+    Uses an atomic counter to barrier all cores: each core atomically increments `exited_cpus` then spins until the counter reaches `MAXCPU` (16). This ensures no core proceeds before all cores have completed the SVM teardown steps above.
+
+    ```c
+    atomic_add_32(&exited_cpus, 1);
+    while (atomic_cmpset_32(&exited_cpus, MAXCPU, MAXCPU) == 0)
+        ;
+    ```
+  </Step>
+  <Step title="Park non-boot cores">
+    Only CPU 0 continues. All other cores spin forever on a `hlt` instruction:
+
+    ```c
+    if (get_cpu() != 0) {
+        while (1) { halt(); }
+    }
+    ```
+  </Step>
+  <Step title="Disable IOMMU">
+    Clears bit 0 of the IOMMU command register at `0xFDD80018` to disable the IOMMU, preventing it from interfering with Linux's direct memory access:
+
+    ```c
+    *(volatile uint64_t *)0xfdd80018 &= ~1;
+    ```
+  </Step>
+  <Step title="Read linux_info and configure VRAM">
+    Copies the `linux_info` struct from `cave_linux_info` (physical address `0x100001000`, placed there by the kernel shellcode) and calls `configure_vram()` to program the AMD GPU hardware registers with the framebuffer and VRAM base/size:
+
+    ```c
+    memcpy(&info, (void *)(cave_linux_info), sizeof(struct linux_info));
+    configure_vram(FB_BASE, VRAM_BASE, info.vram_size);
+    ```
+
+    `configure_vram()` writes to 15 AMD GPU MMIO registers (at `AMDGPU_MMIO_BASE` = `0xE0600000`) including `RCC_CONFIG_MEMSIZE`, the GC and MM framebuffer location/offset registers, and four HUBBUB whitelist registers (`MMHUBBUB` and `DCHUBBUB`).
+  </Step>
+  <Step title="Boot Linux">
+    Calls `boot_linux()`.
+  </Step>
+</Steps>
+
+## The `boot_linux()` function
+
+`boot_linux()` in `shellcode_hypervisor/boot_linux.c` implements the x86 Linux boot protocol:
+
+```c
+void boot_linux(void) {
+  uintptr_t kernel_pa = 0x100000;   // 1 MB — standard Linux load address
+  uintptr_t setup_pa  = 0x10000;    // 64 KB — boot params location
+  uintptr_t cmdline_pa = 0x20000;   // 128 KB — kernel command line
+
+  struct boot_params *bzimage_bp = (struct boot_params *)info.bzimage;
+  struct boot_params *bp = (struct boot_params *)setup_pa;
+  struct setup_header *shdr = &bp->hdr;
+
+  memset(bp, 0, sizeof(struct boot_params));
+  memcpy(shdr, &bzimage_bp->hdr, sizeof(struct setup_header));
+
+  e820_memory_setup(bp);
+
+  shdr->hardware_subarch = X86_SUBARCH_PS5;
+  shdr->type_of_loader   = 0xff;
+  shdr->cmd_line_ptr     = cmdline_pa;
+  shdr->ramdisk_image    = info.initrd & 0xffffffff;
+  shdr->ramdisk_size     = info.initrd_size & 0xffffffff;
+  bp->ext_ramdisk_image  = info.initrd >> 32;
+  bp->ext_ramdisk_size   = info.initrd_size >> 32;
+  bp->acpi_rsdp_addr     = ACPI_RSDP_ADDRESS;  // 0x7fd8e014
+
+  strcpy((char *)cmdline_pa, info.cmdline);
+
+  size_t setup_size  = (shdr->setup_sects + 1) * 512;
+  size_t kernel_size = shdr->syssize * 16;
+  memcpy((void *)kernel_pa, (void *)(info.bzimage + setup_size), kernel_size);
+
+  void (*startup_64)(uint64_t physaddr, struct boot_params *bp) =
+      (void *)(kernel_pa + 0x200);
+  startup_64(kernel_pa, bp);
+}
+```
+
+Key points:
+
+- `hardware_subarch` is set to `X86_SUBARCH_PS5`, a custom value defined in the patched PS5 Linux kernel that triggers PS5-specific initialization (UART, GPU, etc.).
+- The initrd physical address is split across `ramdisk_image`/`ramdisk_size` (low 32 bits) and `ext_ramdisk_image`/`ext_ramdisk_size` (high 32 bits) to support the initrd being placed above 4 GB.
+- The kernel is entered at `kernel_pa + 0x200`, the standard 64-bit entry point offset in a bzImage.
+
+## The e820 memory map
+
+`e820_memory_setup()` builds a static memory map that describes the PS5's physical memory layout to Linux. It marks the hypervisor region (`0x062800000`–`0x064800000`) and other firmware-reserved areas as `E820_TYPE_RESERVED`, and places Linux-usable RAM in the remaining ranges including the high memory region above 4 GB up to `VRAM_BASE`:
+
+```c
+append_e820_table(bp, 0x062800000, 0x064800000, E820_TYPE_RESERVED); // HV
+append_e820_table(bp, 0x100000000, VRAM_BASE,   E820_TYPE_RAM);      // > 4 GB RAM
+append_e820_table(bp, VRAM_BASE,   0x470000000, E820_TYPE_RESERVED); // VRAM
+```
+
+`VRAM_BASE` is computed as `0x470000000 - info.vram_size`. With the default 512 MB VRAM (`VRAM_SIZE = 0x20000000`) this places VRAM at `0x450000000`.
+
+## The `shellcode_hypervisor_args` structure
+
+`shellcode_hypervisor/shellcode_hypervisor_args.h` defines the arguments passed from the kernel shellcode to the hypervisor shellcode. Unlike the kernel shellcode which receives its arguments via a patched pointer at startup, the HV shellcode reads `linux_info` directly from the physical cave address — the three fields below are relocated by the kernel shellcode before the VMEXIT:
+
+```c
+typedef struct {
+  uint64_t bzimage_pa;    // PA of bzImage (relocated by kernel shellcode)
+  uint64_t initrd_pa;     // PA of initrd  (relocated by kernel shellcode)
+  uint64_t linux_info_pa; // PA of linux_info struct (relocated by kernel shellcode)
+} shellcode_hypervisor_args;
+```
+
+<Note>
+The HV shellcode does not access this struct directly at runtime. Instead the kernel shellcode's `boot_linux()` (`kernel_code.c`) copies `bzImage`, `initrd`, and `linux_info` to their final physical addresses in the cave region before triggering the VMEXIT. The HV shellcode reads `linux_info` from the fixed physical address `cave_linux_info` (`0x100001000`).
+</Note>
+
+## Physical memory cave layout
+
+All staging data lives in a contiguous region starting at `0x100000000` (4 GB), defined in `include/config.h`:
+
+```c
+#define cave             0x100000000ULL
+#define cave_hv_paging   cave                    // HV identity-map page tables (2 pages)
+#define cave_hv_code     cave_hv_paging + 0x3000ULL  // HV shellcode binary
+#define cave_linux_files cave_hv_code + 0x2000ULL    // linux_info + bzImage + initrd
+#define cave_linux_info  cave_linux_files
+#define cave_bzImage     cave_linux_info + PAGE_SIZE
+// initrd follows bzImage, size-aligned to PAGE_SIZE
+```
+
+<Warning>
+The `bzImage` and `initrd` are placed contiguously starting at `cave_bzImage`. The initrd immediately follows the bzImage rounded up to `PAGE_SIZE` (0x4000 bytes). Ensure the USB drive's image provides a Linux kernel small enough to leave room before the VRAM region at `VRAM_BASE`.
+</Warning>

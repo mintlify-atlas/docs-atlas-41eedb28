@@ -1,0 +1,66 @@
+---
+title: "PS5 Linux Loader firmware and hardware compatibility"
+description: "Which PS5 models, firmware versions, and peripherals are supported by PS5 Linux Loader, including M.2 SSD availability per firmware version."
+---
+
+PS5 Linux Loader currently supports **PS5 Phat** consoles running **firmware 3.xx or 4.xx**. PS5 Slim is not supported. This page covers every supported firmware version, required and optional hardware, and PS5 settings that must be configured before running the loader.
+
+## Supported firmware versions
+
+Nine firmware versions are supported across the 3.xx and 4.xx families. M.2 SSD support is only available on the 4.xx family.
+
+| Firmware | Supported | M.2 SSD support |
+|----------|-----------|-----------------|
+| 3.00 | Yes | No |
+| 3.10 | Yes | No |
+| 3.20 | Yes | No |
+| 3.21 | Yes | No |
+| 4.00 | Yes | Yes |
+| 4.02 | Yes | Yes |
+| 4.03 | Yes | Yes |
+| 4.50 | Yes | Yes |
+| 4.51 | Yes | Yes |
+
+<Warning>
+  Firmware 5.xx and above are not supported. Support may be added in the future, but Linux would run within the GameOS VM rather than bare-metal, with unknown feature limitations and reduced performance. Firmware 6.xx and above will not be supported.
+</Warning>
+
+<Info>
+  Firmware 1.xx and 2.xx are not currently supported. Support may be added in the future, but it is not a priority. The hypervisor VMCB layout differs on those versions and requires additional work.
+</Info>
+
+## PS5 Phat vs PS5 Slim
+
+Only the **PS5 Phat** (original model, disc and digital editions) is supported. The PS5 Slim is not supported.
+
+If you need to update to a specific supported firmware, download the correct PUP file and follow Sony's official reinstallation guide via Safe Mode.
+
+## Required and optional hardware
+
+### Required
+
+- **USB drive, minimum 64 GB** — used to install and run Linux. An external USB SSD is strongly recommended over a flash drive for speed and reliability.
+- **USB Ethernet or WLAN adapter** — the PS5's built-in network hardware requires custom drivers not yet available; a USB adapter is required for internet access.
+- **USB keyboard and mouse** — USB dongles are also supported.
+
+### Optional
+
+- **M.2 SSD compatible with PS5** — firmware 4.xx only. Lets you run Linux from the faster internal SSD slot. The SSD is dedicated to Linux and cannot be used simultaneously for PS5 game storage.
+- **Bluetooth dongle** — required to use a DualSense controller in Linux. The PS5's built-in Bluetooth is not yet supported in Linux.
+
+## Required PS5 settings
+
+Two settings must be configured on your PS5 before running the loader. The payload uses rest mode to trigger the Linux boot, so USB power must stay on during rest, and HDMI Device Link must be off to avoid the console being woken or switched by a connected display.
+
+**Enable USB power in rest mode:**
+Go to **Settings** → **System** → **Power Saving** → **Features Available in Rest Mode** and set **Supply Power to USB Ports** to **Always**.
+
+**Disable HDMI Device Link:**
+Go to **Settings** → **HDMI** → **Enable HDMI Device Link** and turn it off.
+
+### Recommended settings
+
+These are not required but help avoid interruptions:
+
+- Disable automatic system software updates: **Settings** → **System Software** → **System Software Update and Settings**
+- Disable automatic error reporting: **Settings** → **System Software** → **Report System Software Errors Automatically**

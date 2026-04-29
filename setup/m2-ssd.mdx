@@ -1,0 +1,84 @@
+---
+title: "Install PS5 Linux on an M.2 SSD for better performance"
+description: "Move your PS5 Linux installation from USB to an M.2 SSD for faster storage and better performance using the ps5-linux-tools scripts."
+---
+
+You can use a PS5-compatible M.2 SSD as dedicated storage for Linux. Keep in mind that an M.2 SSD used for Linux **cannot be used for PS5 game storage at the same time** — the two uses are mutually exclusive.
+
+<Warning>
+  Once you initialize an M.2 SSD for Linux, it can no longer be used to store PS5 games. If you want to use your M.2 for both purposes in the future, you will need to reformat it from PS5 system settings.
+</Warning>
+
+## Prerequisites
+
+- You have booted Linux from USB at least once and completed the [first boot setup](/setup/first-boot).
+- You have cloned `ps5-linux-tools` into your home directory (see [first boot setup](/setup/first-boot)).
+
+## Steps
+
+<Steps>
+  <Step title="Attach and format the M.2 SSD on PS5">
+    With PS5 powered off, install the M.2 SSD in the expansion slot following [Sony's official guide](https://www.playstation.com/en-us/support/hardware/ps5-install-m2-ssd). Power the PS5 on and format the drive when prompted by the PS5 system software.
+  </Step>
+
+  <Step title="Boot Linux and initialize the M.2">
+    Run the jailbreak exploit and boot Linux from USB as normal. Then run the following commands to prepare the M.2 for Linux use:
+
+    ```bash
+    sudo apt install zlib1g-dev
+    cd ps5-linux-tools
+    gcc -o m2_init m2_init.c -lz
+    sudo ./m2_init
+    ```
+  </Step>
+
+  <Step title="Reboot Linux">
+    ```bash
+    sudo reboot
+    ```
+
+    If your PS5 shows a prompt asking to format the M.2 again after this reboot, do **not** proceed. Instead, report the issue in the [Discord server](https://discord.gg/PeMGVB7BAm) and include your M.2 drive model and storage size.
+  </Step>
+
+  <Step title="Relaunch Linux">
+    Run the jailbreak exploit again and boot Linux from USB.
+  </Step>
+
+  <Step title="Install the Linux image onto the M.2">
+    Copy the `ps5-ubuntu2604.img` you built during the initial installation onto the PS5, or rebuild it directly on the PS5. Then run the install script:
+
+    ```bash
+    cd ps5-linux-tools
+    chmod +x ./m2_install.sh
+    sudo ./m2_install.sh --install $PATH_TO_YOUR_IMG
+    ```
+
+    Replace `$PATH_TO_YOUR_IMG` with the full path to your `ps5-ubuntu2604.img` file.
+  </Step>
+
+  <Step title="Boot Linux from the M.2">
+    Once installed, you can boot from the M.2 with:
+
+    ```bash
+    cd ps5-linux-tools
+    chmod +x ./m2_exec.sh
+    sudo ./m2_exec.sh
+    ```
+  </Step>
+</Steps>
+
+## Auto-boot from M.2
+
+To make Linux always boot from your M.2 SSD without running `m2_exec.sh` each time, edit the boot label in `/boot/efi/cmdline.txt`. Change:
+
+```text
+root=LABEL=ubuntu2604
+```
+
+to:
+
+```text
+root=LABEL=ubuntu2604-m2
+```
+
+Save the file. On the next boot, Linux will mount the M.2 partition as the root filesystem automatically.

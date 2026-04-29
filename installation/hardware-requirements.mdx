@@ -1,0 +1,69 @@
+---
+title: "Hardware and firmware requirements for PS5 Linux boot"
+description: "Required and optional hardware for PS5 Linux: supported PS5 models, firmware versions, USB drive specs, networking adapters, and PS5 system settings."
+---
+
+Before you start the installation process, make sure you have the right hardware and that your PS5 is running a supported firmware version. ps5-linux runs only on **PS5 Phat** consoles on **3.xx or 4.xx firmware** — Slim models and other firmware versions are not supported.
+
+## Supported firmware versions
+
+| Firmware | M.2 SSD support |
+|----------|-----------------|
+| 3.00, 3.10, 3.20, 3.21 | No |
+| 4.00, 4.02, 4.03, 4.50, 4.51 | Yes |
+
+<Note>
+  Support for 5.xx and higher firmwares will not be added. If you are on a newer firmware, you cannot use ps5-linux.
+</Note>
+
+## Required hardware
+
+- **USB drive, 64 GB minimum** — an external SSD is strongly recommended for acceptable performance.
+- **USB Ethernet or WLAN adapter** — the PS5's built-in network hardware does not yet have Linux drivers.
+- **USB keyboard and mouse** — USB dongles are supported.
+
+## Optional hardware
+
+- **M.2 SSD (PS5-compatible)** — lets you run Linux from a dedicated SSD instead of the USB drive. Only available on 4.xx firmware. See the [official PS5 M.2 installation guide](https://www.playstation.com/en-us/support/hardware/ps5-install-m2-ssd) for compatible models.
+- **Bluetooth dongle** — required to use a DualSense controller in Linux. The PS5's built-in Bluetooth is not yet supported.
+
+## Supported USB ports for booting
+
+Not all USB ports on the PS5 behave the same during boot:
+
+- **Front bottom Type-C port** — supported, recommended.
+- **Rear Type-A ports** — supported, recommended.
+- **Front top Type-A port** — USB 2.0 only; significantly slower and not recommended for booting.
+
+## Required PS5 settings
+
+You must configure these settings before running the exploit, or the boot sequence will fail.
+
+**Enable USB power in rest mode:**
+
+Go to **Settings** → **System** → **Power Saving** → **Features Available in Rest Mode** and set **Supply Power to USB Ports** to **Always**.
+
+**Disable HDMI Device Link:**
+
+Go to **Settings** → **HDMI** → **Enable HDMI Device Link** and turn it off.
+
+## Recommended PS5 settings
+
+These settings are not strictly required but prevent the PS5 from updating or rebooting unexpectedly.
+
+**Disable automatic updates:**
+
+Go to **Settings** → **System Software** → **System Software Update and Settings** and disable automatic updates.
+
+**Disable automatic error reporting:**
+
+Go to **Settings** → **System Software** → **Report System Software Errors Automatically** and turn it off.
+
+<CardGroup cols={2}>
+  <Card title="Build a Linux image" icon="hard-drive" href="/installation/build-linux-image">
+    Build the Ubuntu image you will flash to your USB drive.
+  </Card>
+  <Card title="Flash Linux image to USB" icon="usb" href="/installation/flash-usb">
+    Write the image to your USB drive.
+  </Card>
+</CardGroup>

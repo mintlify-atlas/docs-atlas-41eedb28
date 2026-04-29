@@ -1,0 +1,158 @@
+---
+title: "Kernel shellcode: hook PS5's ACPI wakeup for Linux"
+description: "How the kernel-space shellcode is installed into a code cave, hooked via the ACPI wakeup path, and what it does when the PS5 resumes from rest mode."
+---
+
+The kernel shellcode runs in FreeBSD kernel space (ring-0) on the PS5's ACPI resume path. Instead of resuming normally, the PS5 OS hits a patched call instruction that redirects execution into a code cave in the kernel text segment. There the shellcode re-defeats the hypervisor from ring-0, sets up identity-mapped page tables, copies the hypervisor shellcode to a physical memory cave, and then triggers a `vmmcall` on all cores to exit into the HV shellcode.
+
+## How it is installed
+
+The `prepare_resume()` function in `source/main.c` handles all installation steps before the console enters rest mode.
+
+### Step 1 — Copy shellcode binary to the kernel code cave
+
+The shellcode is pre-compiled and embedded in the payload as `shellcode_kernel_text[]`. It is written into the kernel at `ktext + KERNEL_CODE_CAVE` in 0x1000-byte chunks using `kernel_copyin()`:
+
+```c
+uint64_t dest_text = ktext + env_offset.KERNEL_CODE_CAVE;
+uint32_t CHUNK = 0x1000;
+uint64_t written = 0;
+
+while (written < sz) {
+    uint32_t n = (sz - written > CHUNK) ? CHUNK : (uint32_t)(sz - written);
+    kernel_copyin(&shellcode_kernel_text[written], dest_text + written, n);
+    written += n;
+}
+```
+
+### Step 2 — Write the args struct to the data cave
+
+A `shellcode_kernel_args` struct is populated in userland and written to `ktext + KERNEL_DATA_CAVE` with a single `kernel_copyin()` call. This struct is the only communication channel between the userland payload and the kernel shellcode at runtime.
+
+### Step 3 — Patch the args pointer marker
+
+The shellcode binary contains a hard-coded 64-bit sentinel value `0x11AA11AA11AA11AA` near its start. The loader scans the first 0x40 bytes of the binary to find this offset and overwrites it with the actual kernel virtual address of the args struct:
+
+```c
+int offset = -1;
+for (int i = 0; i < 0x40; i++) {
+    if (*(uint64_t *)((uint64_t)shellcode_kernel_text + i) == 0x11AA11AA11AA11AA) {
+        offset = i;
+        break;
+    }
+}
+kwrite64(dest_text + offset, dest_data);
+```
+
+Inside the shellcode, this location holds a volatile pointer that is read before any `.data` segment access:
+
+```c
+volatile shellcode_kernel_args *args_ptr =
+    (volatile shellcode_kernel_args *)0x11AA11AA11AA11AA;
+```
+
+### Step 4 — Patch the ACPI wakeup hook
+
+A 5-byte near `CALL` instruction is written at `ktext + HOOK_ACPI_WAKEUP_MACHDEP`, which corresponds to `AcpiSetFirmwareWakingVector` inside `acpi_wakeup_machdep`. The relative displacement is computed so it calls the shellcode entry point:
+
+```c
+uint64_t instr_to_patch = ktext + env_offset.HOOK_ACPI_WAKEUP_MACHDEP;
+int64_t diff_call = dest_text - instr_to_patch;
+
+uint8_t new_instr[5];
+new_instr[0] = 0xE8; // CALL near
+*((uint32_t *)&new_instr[1]) = (int32_t)(diff_call - 5);
+
+kernel_copyin(new_instr, instr_to_patch, 5);
+```
+
+### Step 5 — Disable debug and CFI checks
+
+Two additional one-byte patches convert potential abort paths to immediate returns:
+
+```c
+kwrite8(ktext + env_offset.KERNEL_DEBUG_PATCH, 0xC3); // RET — neutralize debug exception
+kwrite8(ktext + env_offset.KERNEL_CFI_CHECK,   0xC3); // RET — neutralize CFI check
+```
+
+## The `shellcode_kernel_args` structure
+
+This struct is defined in `shellcode_kernel/shellcode_kernel_args.h` and is shared between the userland payload and the kernel shellcode:
+
+```c
+typedef struct {
+  uint32_t fw_version;                  // Firmware version (upper 16 bits used)
+  uint64_t ktext;                       // Kernel text base VA
+  uint64_t kdata;                       // Kernel data base VA
+  uint64_t dmap_base;                   // Direct-map base VA
+
+  // Kernel function pointers (resolved from per-fw offsets table)
+  uint64_t fun_printf;
+  uint64_t fun_va_to_pa;
+  uint64_t fun_hv_iommu_set_buffers;
+  uint64_t fun_hv_iommu_wait_completion;
+  uint64_t fun_acpi_set_fw_waking_vector;
+  uint64_t fun_smp_rendezvous;
+  uint64_t fun_smp_no_rendevous_barrier;
+  uint64_t fun_transmitter_control;
+  uint64_t fun_mp3_initialize;
+  uint64_t fun_mp3_invoke;
+
+  uint64_t g_vbios;                     // Kernel VA of VBIOS data
+
+  // IOMMU buffer virtual addresses (for re-init after resume)
+  uint64_t iommu_mmio_va;
+  uint64_t iommu_cb2_va;
+  uint64_t iommu_cb3_va;
+  uint64_t iommu_eb_va;
+
+  uint64_t vmcb[16];                    // Physical addresses of all 16 VMCBs
+
+  // HV code patching addresses
+  uint64_t kernel_uart_override;
+  uint64_t hv_handle_vmexit_pa;         // PA of the HV VMEXIT handler to patch
+  uint64_t hv_code_cave_pa;             // PA of HV code cave for shellcode 1
+  uint64_t hv_uart_override_pa;
+
+  uint64_t linux_info_va;               // VA of linux_info (to be relocated)
+} shellcode_kernel_args;
+```
+
+## What the shellcode does on ACPI wake
+
+When the PS5 wakes from rest mode the shellcode entry point (`main()`, marked `.entry_point`) runs in ring-0:
+
+<Steps>
+  <Step title="Validate args pointer">
+    Reads `args_ptr->fun_printf` and checks that the lower 16 bits are non-zero. If the args struct was not written correctly the shellcode returns immediately without doing any damage.
+  </Step>
+  <Step title="Enable UART">
+    Clears a bit in the UART control register at `dmap_base + 0xC0115110` and zeroes `kernel_uart_override` to activate serial output for debug logging.
+  </Step>
+  <Step title="Reconfigure IOMMU">
+    Translates the three IOMMU buffer VAs to physical addresses using `fun_va_to_pa`, then calls `fun_hv_iommu_set_buffers` to reinitialize the IOMMU command buffers. This is required because the IOMMU hardware reinitializes during suspend/resume and must be pointed at the same buffers again before VMCB patching can proceed.
+  </Step>
+  <Step title="Disable TMRs">
+    Calls `tmr_disable()` to zero all TMR CONFIG registers (indices 0–23), fully removing hardware memory range restrictions in ring-0 context.
+  </Step>
+  <Step title="Re-patch all 16 VMCBs via IOMMU">
+    Calls `patch_vmcb(args_ptr)`, which re-applies the same five VMCB field writes (offsets `0x00`, `0x08`, `0x10`, `0x58`, `0x90`) that were performed during the userland `stage3_patch_vmcbs()`. This is necessary because the hypervisor reloads VMCB state on resume.
+  </Step>
+  <Step title="Re-issue IOMMU set_buffers to force VMEXIT">
+    Calls `fun_hv_iommu_set_buffers` a second time. This triggers a VMEXIT through the now-patched VMCB, which no longer injects faults.
+  </Step>
+  <Step title="Initialize globals and prepare Linux">
+    Calls `init_global_pointers()` to copy the args struct into the `.data`-resident `args` variable and resolve all function pointers. Then calls `boot_linux()` (defined in `kernel_code.c`) which installs the HV page tables and HV shellcode.
+  </Step>
+  <Step title="smp_rendezvous → vmmcall on all cores">
+    Calls `smp_rendezvous(smp_no_rendevous_barrier, vmmcall_dummy, smp_no_rendevous_barrier, NULL)`. This pins a `vmmcall` to all 16 cores simultaneously. The patched VMEXIT handler jumps directly to the hypervisor shellcode, so the PS5 OS never resumes.
+  </Step>
+</Steps>
+
+## Shellcode build and embedding
+
+The kernel shellcode is compiled separately in `shellcode_kernel/` with its own Makefile and linker script. The resulting binary is converted to a C array (`shellcode_kernel_text[]`) via a `bin_to_c` script and included as a header by the main payload. This means the shellcode binary is statically embedded in `ps5-linux-loader.elf` — no file I/O is needed to install it.
+
+<Note>
+The shellcode avoids absolute `.data` references until after NPT is disabled. Before `init_global_pointers()` is called all reads go through the volatile `args_ptr` pointer obtained from the sentinel, not from the global `args` variable.
+</Note>

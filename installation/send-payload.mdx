@@ -1,0 +1,77 @@
+---
+title: "Send the ps5-linux-loader.elf PS5 payload via socat"
+description: "Download the prebuilt release or compile from source, then send ps5-linux-loader.elf to the PS5 via socat over TCP port 9021 to boot Linux."
+---
+
+After the exploit runs, the PS5 listens on port 9021 for an ELF payload. You send `ps5-linux-loader.elf` from your PC, and the loader takes over — defeating the hypervisor, loading the Linux kernel from your USB drive, and putting the console into rest mode to resume into Linux.
+
+## Get the ps5-linux-loader ELF
+
+You have two options: download a prebuilt release or compile from source.
+
+<Tabs>
+  <Tab title="Download prebuilt">
+    Download `ps5-linux-loader.elf` from the [GitHub releases page](https://github.com/ps5-linux/ps5-linux-loader/releases/).
+
+    No build tools required.
+  </Tab>
+  <Tab title="Compile from source">
+    Compiling from source requires the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) to be installed first. Follow the SDK's README to install it, then:
+
+    ```bash
+    git clone https://github.com/ps5-linux/ps5-linux-loader
+    cd ps5-linux-loader
+    make
+    ```
+
+    The compiled ELF is written to `bin/ps5-linux-loader.elf`.
+
+    <Note>
+      The build system expects the SDK at `/opt/ps5-payload-sdk/` by default. Set the `PS5_PAYLOAD_SDK` environment variable if you installed it elsewhere.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Send the payload
+
+Find your PS5's IP address at **Settings** → **Network** → **View Connection Status**.
+
+Replace `192.168.178.127` with your PS5's actual IP address:
+
+```bash
+socat -t 99999999 - TCP:192.168.178.127:9021 < ps5-linux-loader.elf
+```
+
+<Note>
+  `socat` must be installed on your PC. On Ubuntu/Debian: `sudo apt install socat`. On macOS with Homebrew: `brew install socat`.
+</Note>
+
+## What happens next
+
+After the payload is received, the loader runs through several stages:
+
+1. The PS5 notification banner reads "Welcome to ps5-linux-loader. We'll defeat HV and prepare the system to boot Linux on sleep resume."
+2. The console enters rest mode automatically after 5 seconds.
+3. The **orange LED** starts blinking while the system prepares.
+4. Wait until the orange LED **stops blinking and becomes static**.
+5. Only then, press the **power button** to wake the PS5.
+
+<Warning>
+  If you press the power button while the orange LED is still blinking, the PS5 will boot back into the PS5 OS. Wait for the LED to become static before pressing power.
+</Warning>
+
+## Confirming a successful boot
+
+- **White LED** — Linux booted successfully. The desktop will appear on your display.
+- **PS5 OS loads instead** — you pressed the power button too early. Re-run the exploit and try again.
+
+If the LED is white but the screen is black, try a different monitor or add `amdgpu.force_1080p=1` to `cmdline.txt` in the FAT32 partition of the USB drive.
+
+<CardGroup cols={2}>
+  <Card title="First boot setup" icon="monitor" href="/setup/first-boot">
+    Configure your Linux environment after booting for the first time.
+  </Card>
+  <Card title="Run the exploit" icon="terminal" href="/installation/run-exploit">
+    Review the exploit steps if something went wrong.
+  </Card>
+</CardGroup>

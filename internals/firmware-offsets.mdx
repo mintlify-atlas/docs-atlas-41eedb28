@@ -1,0 +1,128 @@
+---
+title: "Firmware offset tables for PS5 kernel and hypervisor"
+description: "Per-firmware symbol offset table structure used by ps5-linux-loader to locate kernel and HV symbols after ASLR is defeated by the hypervisor exploit."
+---
+
+ps5-linux-loader does not rely on runtime symbol resolution. Instead, it uses a static `offset_list` struct compiled for each supported firmware version. Because the HV exploit bypasses ASLR before the loader runs, the kernel text and data sections are always mapped at known base addresses — so every kernel function, data structure, and hypervisor physical address can be expressed as a fixed offset from those bases. A separate `offset_list` instance is compiled into `source/offsets.c` for each supported firmware version.
+
+## The `offset_list` struct
+
+Defined in `include/offsets.h`, `offset_list` is a flat array of `uint64_t` fields. Each field is an offset from a base address (ktext, kdata, or an absolute PA), depending on the category below.
+
+### Kernel pmap
+
+| Field | Description |
+|-------|-------------|
+| `PMAP_STORE` | Offset from kdata to the kernel pmap storage base. Used to locate the root page-map structure for the kernel address space. |
+
+### VCPU fields (1.xx and 2.xx only)
+
+These fields are only needed on firmware 1.xx and 2.xx, where the HV VCPU layout differs. They are populated in all `offset_list` instances for structural completeness but are only read by the 1.xx/2.xx code paths.
+
+| Field | Description |
+|-------|-------------|
+| `HV_VCPU` | Offset to the VCPU array base in the hypervisor. |
+| `HV_VCPU_CPUID` | Offset within a VCPU entry to the CPU ID field. |
+| `HV_VCPU_ARRAY_OFF` | Byte offset of the VCPU array from the HV base. |
+| `HV_VCPU_STRIDE` | Size in bytes of a single VCPU entry. Used to index into the VCPU array by CPU number. |
+| `HV_VCPU_VMCB_PTR` | Offset within a VCPU entry to the pointer to the VMCB (Virtual Machine Control Block). |
+
+### Kernel shellcode injection sites
+
+| Field | Description |
+|-------|-------------|
+| `KERNEL_CODE_CAVE` | Offset from ktext where the kernel shellcode is injected. Points to a region of unused padding in the kernel `.text` segment. |
+| `KERNEL_DATA_CAVE` | Offset from ktext where the shellcode argument block is written. Computed as `KERNEL_CODE_CAVE + 0xBBE300`. |
+
+### IOMMU
+
+| Field | Description |
+|-------|-------------|
+| `IOMMU_SOFTC` | Kernel virtual address of the IOMMU software context structure. Used when programming the IOMMU to allow DMA from the injected shellcode regions. |
+
+### Virtual memory structure offsets
+
+These are byte offsets within kernel structs, not offsets from ktext or kdata.
+
+| Field | Description |
+|-------|-------------|
+| `VMSPACE_VM_VMID` | Byte offset of the `vm_vmid` field inside a `vmspace` struct. |
+| `VMSPACE_VM_PMAP` | Byte offset of the `vm_pmap` pointer inside a `vmspace` struct. |
+| `PMAP_PM_PML4` | Byte offset of the PML4 table pointer inside a `pmap` struct. |
+| `PMAP_PM_CR3` | Byte offset of the CR3 value inside a `pmap` struct. |
+
+### GPU vmspace
+
+| Field | Description |
+|-------|-------------|
+| `DATA_BASE_GVMSPACE` | Offset from kdata to the GPU vmspace array. Used to locate and patch GPU address space mappings when setting up VRAM for Linux. |
+
+### ACPI wakeup hook
+
+| Field | Description |
+|-------|-------------|
+| `HOOK_ACPI_WAKEUP_MACHDEP` | Offset from ktext of the call site in `acpi_wakeup_machdep` that is patched to redirect into the injected kernel shellcode. This is the entry point for taking over execution after resume from rest mode. |
+
+### Kernel function offsets
+
+All offsets are from ktext.
+
+| Field | Description |
+|-------|-------------|
+| `FUN_PRINTF` | `printf` — used by the shellcode for debug output when `DEBUG` is enabled. |
+| `FUN_VA_TO_PA` | Virtual-to-physical address translation helper. |
+| `FUN_HV_IOMMU_SET_BUFFERS` | Programs the IOMMU buffer list for a given region. |
+| `FUN_HV_IOMM_WAIT_COMPLETION` | Waits for an in-flight IOMMU operation to complete. |
+| `FUN_SMP_RENDEZVOUS` | Executes a callback on all CPUs via SMP rendezvous. Used to flush TLBs and synchronize CPU state across all cores. |
+| `FUN_SMP_NO_RENDEVOUS_BARRIER` | Barrier variant of `smp_rendezvous` that does not wait for all CPUs to check in. |
+
+### Hypervisor physical addresses
+
+These are absolute physical addresses within the HV memory region, not relative offsets.
+
+| Field | Description |
+|-------|-------------|
+| `HV_HANDLE_VMEXIT_PA` | Physical address of the HV's VMEXIT dispatch routine. The exploit patches this to redirect VM exits into the HV code cave. |
+| `HV_CODE_CAVE_PA` | Physical address of the unused code region in HV memory where the HV shellcode is installed. |
+| `HV_UART_OVERRIDE_PA` | Physical address of the UART override patch location in HV space. Used to enable HV-level debug output. |
+
+### GPU and display function offsets
+
+All offsets are from ktext.
+
+| Field | Description |
+|-------|-------------|
+| `G_VBIOS` | Offset to the GPU VBIOS data in kdata. |
+| `FUN_TRANSMITTER_CONTROL` | Display transmitter control function. Called during HDMI output initialization. |
+| `FUN_MP3_INITIALIZE` | MP3 (AMD microprocessor subsystem) initialization function. |
+| `FUN_MP3_INVOKE` | MP3 invocation function. |
+
+### Kernel patch locations
+
+All offsets are from ktext.
+
+| Field | Description |
+|-------|-------------|
+| `KERNEL_UART_OVERRIDE` | Location of the UART debug output patch in the kernel. Enables serial console output from the kernel. |
+| `KERNEL_DEBUG_PATCH` | Location of a debug assertion or check that is patched out to allow the loader to proceed. |
+| `KERNEL_CFI_CHECK` | Location of a CFI (Control Flow Integrity) check that must be disabled to permit the shellcode injection. |
+
+## Supported firmware versions
+
+Each firmware version has a corresponding `offset_list` instance with the symbol name shown below. The loader selects the correct instance at runtime based on the detected firmware version.
+
+| Firmware | Symbol | M.2 support |
+|----------|--------|-------------|
+| 3.00 | `off_0300` | No |
+| 3.10 | `off_0310` | No |
+| 3.20 | `off_0320` | No |
+| 3.21 | `off_0321` | No |
+| 4.00 | `off_0400` | Yes |
+| 4.02 | `off_0402` | Yes |
+| 4.03 | `off_0403` | Yes |
+| 4.50 | `off_0450` | Yes |
+| 4.51 | `off_0451` | Yes |
+
+<Info>
+  To add support for a new firmware version, you must provide a complete `offset_list` with all fields populated and add a new `extern` declaration in `include/offsets.h`. Every field is required — leaving any field at zero will cause incorrect behavior or a crash at the corresponding step of the boot sequence.
+</Info>

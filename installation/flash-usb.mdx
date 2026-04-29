@@ -1,0 +1,103 @@
+---
+title: "Flash the PS5 Linux Ubuntu image to your USB drive"
+description: "Write ps5-ubuntu2604.img to a 64 GB+ USB drive on Linux, macOS, or Windows using dd, Balena Etcher, or WSL2 with usbipd-win before booting."
+---
+
+Once you have built `output/ps5-ubuntu2604.img`, you need to write it to a USB drive. Use a drive of at least 64 GB — an external SSD is strongly recommended. A slow USB thumb drive will make the Linux desktop noticeably sluggish.
+
+<Warning>
+  The `dd` command and Balena Etcher will erase everything on the target drive. Double-check that you have selected the correct device before proceeding.
+</Warning>
+
+## Flash instructions
+
+<Tabs>
+  <Tab title="Linux / macOS">
+    First, identify your drive name with `lsblk` (Linux) or `diskutil list` (macOS). Replace `/dev/sdX` with the actual device path.
+
+    ```bash
+    sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress conv=fsync
+    ```
+
+    Wait for `dd` to finish and return to the shell prompt before unplugging the drive.
+  </Tab>
+  <Tab title="Windows — Balena Etcher">
+    <Steps>
+      <Step title="Download Balena Etcher">
+        Download and install [Balena Etcher](https://etcher.balena.io) for Windows.
+      </Step>
+      <Step title="Select the image">
+        Click **Flash from file** and select `output/ps5-ubuntu2604.img`.
+      </Step>
+      <Step title="Select the target drive">
+        Click **Select target** and choose your USB drive. Verify the drive letter and size before continuing.
+      </Step>
+      <Step title="Flash">
+        Click **Flash!** and wait for the process to complete. Etcher will verify the write automatically.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows — WSL2 + usbipd">
+    This method attaches your USB drive to WSL2 so you can use `dd` directly from Linux.
+
+    <Steps>
+      <Step title="Install usbipd">
+        Open **PowerShell** as administrator:
+
+        ```powershell
+        winget install usbipd
+        ```
+      </Step>
+      <Step title="Plug in your USB drive and list devices">
+        ```powershell
+        usbipd list
+        ```
+
+        Find the `BUSID` for your USB drive in the output (for example, `5-3`).
+      </Step>
+      <Step title="Bind and attach the drive to WSL">
+        Replace `5-3` with your actual `BUSID`:
+
+        ```powershell
+        usbipd bind --busid 5-3
+        usbipd attach --busid 5-3 --wsl
+        ```
+      </Step>
+      <Step title="Confirm the drive appeared in WSL">
+        Open your WSL terminal:
+
+        ```bash
+        lsblk
+        ```
+
+        Note the device name, for example `/dev/sdb`.
+      </Step>
+      <Step title="Flash the image">
+        Replace `/dev/sdX` with the device name you confirmed above:
+
+        ```bash
+        sudo wipefs -a /dev/sdX
+        sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Plug the drive into your PS5
+
+Use one of the supported ports for booting:
+
+- **Front bottom Type-C port**
+- **Rear Type-A ports**
+
+Avoid the front top Type-A port — it is USB 2.0 and will be significantly slower.
+
+<CardGroup cols={2}>
+  <Card title="Run the jailbreak exploit" icon="terminal" href="/installation/run-exploit">
+    Gain code execution on the PS5 using the browser-based exploit.
+  </Card>
+  <Card title="Hardware requirements" icon="cpu" href="/installation/hardware-requirements">
+    Review supported ports and PS5 settings.
+  </Card>
+</CardGroup>
